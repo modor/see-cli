@@ -1,6 +1,8 @@
 package com.hundsun.jrescli;
 
+import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.util.JSONPObject;
 import com.hundsun.jrescli.builder.OptionBuilder;
 import com.hundsun.jrescli.utils.SignatureUtil;
 import org.apache.commons.cli.CommandLine;
@@ -18,6 +20,9 @@ import java.io.UnsupportedEncodingException;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 public class App {
@@ -66,18 +71,37 @@ public class App {
 		Options options = new OptionBuilder().argsOption();
 		CommandLineParser parser = new PosixParser();
 		CommandLine cmd = parser.parse(options, args);
-		File jsonFile = new File(cmd.getOptionValue("f"));
-		Map<String, String> maps = null;
-		if (jsonFile.isFile() && jsonFile.exists()) {
-			ObjectMapper mapper = new ObjectMapper();
-			maps = mapper.readValue(FileUtils.readFileToString(jsonFile, "UTF-8"), Map.class);
+
+		Map<String, String> applicationListMaps = new HashMap<String, String>() {
+			{
+				put("Action", "ApplicationList");
+				put("ProductType", "SEE.PRODUCT");
+				put("EnvironmentId", "001");
+			}
+		};
+		String applicationListUrl = "http://" + cmd.getOptionValue("h") + "/acm/api/v1/application?"
+				+ getParamsString(SignatureUtil.sign(cmd.getOptionValue("u"), cmd.getOptionValue("p"),
+						"ApplicationList", "GET", applicationListMaps));
+		// System.out.println(ApplicationListUrl);
+		List<Map<String, String>> appList = new ObjectMapper().readValue(getReponse(applicationListUrl, "GET"),
+				ArrayList.class);
+		for (Map<String, String> app : appList) {
+			Map<String, String> appDeployByIdMap = new HashMap<String, String>() {
+				{
+					put("Action", "ApplicationDeployById");
+					put("EnvironmentId", "001");
+				}
+			};
+			appDeployByIdMap.put("SystemId", app.get("id"));
+			String applicationDeployByIdUrl = "http://" + cmd.getOptionValue("h") + "/acm/api/v1/application?"
+					+ getParamsString(SignatureUtil.sign(cmd.getOptionValue("u"), cmd.getOptionValue("p"),
+							"ApplicationDeployById", "POST", appDeployByIdMap));
+			String deployResult = getReponse(applicationDeployByIdUrl, "POST");
+			if (deployResult == null || deployResult.equals("")) {
+				System.out.println("Failed Application:" + app);
+			}
+			Thread.sleep(1000);
 		}
 
-		String url = "http://" + cmd.getOptionValue("h") + "/acm/api/v1/application?"
-				+ getParamsString(SignatureUtil.sign(cmd.getOptionValue("u"), cmd.getOptionValue("p"),
-						cmd.getOptionValue("a"), cmd.getOptionValue("t"), maps));
-
-		System.out.println(url);
-		System.out.println(getReponse(url, cmd.getOptionValue("t")));
 	}
 }
